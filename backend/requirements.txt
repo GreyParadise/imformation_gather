@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+feedparser
+trafilatura
+apscheduler
+pyyaml
+python-dotenv
+openai

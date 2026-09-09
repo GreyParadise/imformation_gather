@@ -1,0 +1,135 @@
+﻿categories:
+  - key: tech_ai
+    name: 科技/AI
+  - key: academic
+    name: 科学/学术
+
+sources:
+  - key: ithome
+    name: IT之家
+    type: rss
+    url: https://www.ithome.com/rss/
+    category: tech_ai
+    mode: news
+    weight: 1.0
+
+  - key: solidot
+    name: Solidot
+    type: rss
+    url: https://www.solidot.org/index.rss
+    category: tech_ai
+    mode: news
+    weight: 1.0
+
+  - key: sspai
+    name: 少数派
+    type: rss
+    url: https://sspai.com/feed
+    category: tech_ai
+    mode: news
+    weight: 1.0
+
+  - key: 36kr
+    name: 36氪
+    type: rss
+    url: https://36kr.com/feed
+    category: tech_ai
+    mode: news
+    weight: 1.0
+    enabled: false
+
+  - key: hackernews
+    name: Hacker News
+    type: rss
+    url: https://news.ycombinator.com/rss
+    category: tech_ai
+    mode: news
+    weight: 1.2
+
+  - key: theverge
+    name: The Verge
+    type: rss
+    url: https://www.theverge.com/rss/index.xml
+    category: tech_ai
+    mode: news
+    weight: 1.0
+
+  - key: techcrunch
+    name: TechCrunch
+    type: rss
+    url: https://techcrunch.com/feed/
+    category: tech_ai
+    mode: news
+    weight: 1.0
+
+  - key: arstechnica
+    name: Ars Technica
+    type: rss
+    url: https://feeds.arstechnica.com/arstechnica/index
+    category: tech_ai
+    mode: news
+    weight: 1.0
+
+  - key: google_ai_blog
+    name: Google AI Blog
+    type: rss
+    url: https://blog.google/technology/ai/rss/
+    category: tech_ai
+    mode: news
+    weight: 1.1
+
+  - key: arxiv_cs_ai
+    name: arXiv cs.AI
+    type: rss
+    url: https://rss.arxiv.org/rss/cs.AI
+    category: academic
+    mode: news
+    weight: 0.9
+
+  - key: arxiv_cs_cl
+    name: arXiv cs.CL
+    type: rss
+    url: https://rss.arxiv.org/rss/cs.CL
+    category: academic
+    mode: news
+    weight: 0.9
+
+  - key: arxiv_cs_lg
+    name: arXiv cs.LG
+    type: rss
+    url: https://rss.arxiv.org/rss/cs.LG
+    category: academic
+    mode: news
+    weight: 0.9
+
+  - key: arxiv_cs_cv
+    name: arXiv cs.CV
+    type: rss
+    url: https://rss.arxiv.org/rss/cs.CV
+    category: academic
+    mode: news
+    weight: 0.9
+
+  - key: nature
+    name: Nature
+    type: rss
+    url: https://www.nature.com/nature.rss
+    category: academic
+    mode: news
+    weight: 1.3
+
+  - key: sciencedaily
+    name: ScienceDaily
+    type: rss
+    url: https://www.sciencedaily.com/rss/top/science.xml
+    category: academic
+    mode: news
+    weight: 1.0
+
+  - key: physorg
+    name: Phys.org
+    type: rss
+    url: https://phys.org/rss-feed/
+    category: academic
+    mode: news
+    weight: 1.0
