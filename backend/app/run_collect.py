@@ -64,8 +64,8 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
     stats = {"new_articles": 0, "dropped_dup": 0, "enriched": 0, "sources_ok": 0, "sources_fail": 0, "not_modified": 0}
     db.init_db()
     with db.get_db() as conn:
-        sources = load_and_sync_sources(conn)
-        enabled = [s for s in sources if conn.execute("SELECT enabled FROM sources WHERE key=?", (s["key"],)).fetchone()["enabled"]]
+        load_and_sync_sources(conn)
+        enabled = [dict(r) for r in conn.execute("SELECT key FROM sources WHERE enabled=1").fetchall()]
         existing_hashes = {row["url_hash"] for row in conn.execute("SELECT url_hash FROM articles")}
         recent = conn.execute(
             "SELECT id, simhash FROM articles WHERE dup_of IS NULL AND fetched_at > ? ORDER BY id DESC LIMIT 5000",
@@ -102,6 +102,7 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
                         "published_at": entry.get("published_at") or now_iso(),
                         "fetched_at": now_iso(),
                         "simhash": sh,
+                        "source_mode": row["mode"],
                     })
             with db.get_db() as conn:
                 inserted_keys = []
@@ -138,7 +139,7 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
 
         await asyncio.gather(*(run_source(s["key"]) for s in enabled))
 
-    need_enrich = [a for a in new_inserts if not a["body"] or len(a["body"]) < MIN_BODY_LEN]
+    need_enrich = [a for a in new_inserts if a.get("source_mode") == "news" and (not a["body"] or len(a["body"]) < MIN_BODY_LEN)]
     if need_enrich:
         async with make_async_client() as client:
             await enrich_batch(client, need_enrich)

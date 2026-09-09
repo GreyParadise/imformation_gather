@@ -51,7 +51,7 @@ const needCfg = () => !config.key && !showCfg.value
 
 <template>
   <header class="topbar">
-    <h1>{{ route.name === 'item' ? '文章详情' : route.name === 'sources' ? '订阅源管理' : '资讯快看' }}</h1>
+    <h1>{{ route.name === 'item' ? '文章详情' : route.name === 'sources' ? '订阅源管理' : route.name === 'updates' ? '订阅更新' : '资讯快看' }}</h1>
     <button v-if="route.name === 'news'" class="icon-btn" title="刷新" @click="$refs.rv?.load(true)">↻</button>
     <button v-if="route.name === 'news'" class="icon-btn" @click="$router.push('/sources')">📡</button>
     <button class="icon-btn" @click="showCfg = true">⚙️</button>
@@ -61,6 +61,7 @@ const needCfg = () => !config.key && !showCfg.value
 
   <nav class="tabbar">
     <router-link to="/"><span class="ico">📰</span>资讯</router-link>
+    <router-link to="/updates"><span class="ico">📺</span>更新</router-link>
     <router-link to="/sources"><span class="ico">📡</span>订阅源</router-link>
     <a @click.prevent="showCfg = true"><span class="ico">⚙️</span>设置</a>
   </nav>

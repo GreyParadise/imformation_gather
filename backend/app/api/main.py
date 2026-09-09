@@ -127,6 +127,34 @@ async def news(
     return {"records": rows, "next_cursor": next_cursor}
 
 
+@app.get("/api/updates", dependencies=[Auth])
+async def updates(
+    before: Optional[str] = Query(None),
+    size: int = Query(30, ge=1, le=50),
+):
+    where = ["s.mode = 'subscription'", "s.enabled = 1", "a.dup_of IS NULL"]
+    params: list = []
+    if before:
+        pub, aid = _decode_cursor(before)
+        where.append("(a.published_at < ? OR (a.published_at = ? AND a.id < ?))")
+        params += [pub, pub, aid]
+    sql = f"""
+        SELECT a.id, a.url, a.title, a.cover, a.published_at,
+               s.name AS source_name, s.category
+        FROM articles a JOIN sources s ON s.id = a.source_id
+        WHERE {' AND '.join(where)}
+        ORDER BY a.published_at DESC, a.id DESC
+        LIMIT ?
+    """
+    params.append(size + 1)
+    with db.get_db() as conn:
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    has_more = len(rows) > size
+    rows = rows[:size]
+    next_cursor = _encode_cursor(rows[-1]["published_at"], rows[-1]["id"]) if has_more and rows else None
+    return {"records": rows, "next_cursor": next_cursor}
+
+
 @app.get("/api/stats", dependencies=[Auth])
 async def stats():
     with db.get_db() as conn:
