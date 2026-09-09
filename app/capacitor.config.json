@@ -1,0 +1,13 @@
+{
+  "appId": "com.info.gather",
+  "appName": "资讯快看",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "Browser": {
+      "toolBarType": "minimal"
+    }
+  }
+}

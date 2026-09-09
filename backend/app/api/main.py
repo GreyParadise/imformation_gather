@@ -2,6 +2,7 @@ import base64
 import binascii
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import feedparser
@@ -12,7 +13,15 @@ from .. import db
 from ..pipeline.httpclient import make_async_client
 from ..settings import APP_KEY
 
-OPEN_PATHS = {"/api/health"}
+app = FastAPI(title="InfoGather API", lifespan=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+)
+
+OPEN_API_PATHS = {"/api/health"}
 
 
 def verify_key(x_app_key: Optional[str] = Header(None)):
@@ -25,14 +34,6 @@ def verify_key(x_app_key: Optional[str] = Header(None)):
 
 Auth = Depends(verify_key)
 
-app = FastAPI(title="InfoGather API", lifespan=None)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
-)
-
 
 @app.on_event("startup")
 async def startup():
@@ -41,7 +42,8 @@ async def startup():
 
 @app.middleware("http")
 async def auth_middleware(request, call_next):
-    if request.url.path not in OPEN_PATHS and request.method != "OPTIONS":
+    path = request.url.path
+    if path.startswith("/api/") and path not in OPEN_API_PATHS and request.method != "OPTIONS":
         if APP_KEY:
             import hmac
             key = request.headers.get("x-app-key")
@@ -302,6 +304,12 @@ async def delete_source(source_id: int):
         conn.execute("DELETE FROM articles WHERE source_id=?", (source_id,))
         conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
     return {"ok": True}
+
+
+_dist = Path(__file__).resolve().parents[3] / "app" / "dist"
+if _dist.exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=_dist, html=True), name="h5")
 
 
 def run():

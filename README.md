@@ -45,14 +45,31 @@ npm run dev          # http://localhost:5173 ，开发模式经 Vite 代理连�
 
 ### 3. 打包 APK
 
+本机需 JDK 21 与 Android SDK（platform-tools / platforms;android-35 / build-tools;35.0.0），已装好则：
+
 ```powershell
 cd app
-npm i -D @capacitor/core @capacitor/cli @capacitor/android
-npx cap init 资讯快看 com.info.gather --web-dir=dist
 npm run build
-npx cap add android
-npx cap open android   # Android Studio 里 Build > APK
+npx cap sync android
+$env:JAVA_HOME="C:\Android\jdk21"; $env:ANDROID_HOME="C:\Android\Sdk"
+android\gradlew.bat -p android assembleDebug
+# 产物 app\android\app\build\outputs\apk\debug\app-debug.apk
 ```
+
+注：项目路径含中文时 `android/gradle.properties` 需保留 `android.overridePathCheck=true`。
+
+### 4. 公网访问（Cloudflare Tunnel）
+
+后端已单端口同时托管 H5 与 API（生产构建的 `app/dist` 存在时自动挂载），所以只需暴露 8000：
+
+```powershell
+cloudflared tunnel --url http://127.0.0.1:8000
+# 日志中输出一段 https://xxx.trycloudflare.com 随机域名，手机浏览器直接访问
+# 首次进入 ⚙️ 填入后端 .env 的 APP_KEY 即可
+```
+
+双击项目根的 `start.bat` 可一键拉起"后端 + 隧道"并打印当前公网地址。
+注意：quick tunnel 域名随重启变化；需固定域名请注册 Cloudflare 账号改命名隧道（`cloudflared tunnel login` + 自有域名）。
 
 ## 采集漏斗
 
