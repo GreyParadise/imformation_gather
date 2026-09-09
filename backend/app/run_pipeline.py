@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 
 from . import db
 from .pipeline.cluster import find_cluster, find_cluster_by_simhash, pack_vec, unpack_vec
-from .pipeline.llm import EmbeddingUnavailable, embed_texts, summarize
+from .pipeline.llm import EmbeddingUnavailable, RateLimited, embed_texts, summarize
 from .pipeline.rules import hard_filter
 from .settings import EMBED_MODEL
 
 WINDOW_HOURS = 72
 BATCH_LIMIT = 300
-LLM_CONCURRENCY = 4
+LLM_CONCURRENCY = 2
+LLM_MIN_INTERVAL = float(__import__("os").getenv("LLM_MIN_INTERVAL", "7.5"))
 MASK64 = (1 << 64) - 1
 
 
@@ -144,12 +145,29 @@ async def run_pipeline(limit: int = BATCH_LIMIT) -> dict:
         stats["joined_cluster"] += 1
 
     sem = asyncio.Semaphore(LLM_CONCURRENCY)
+    pace_lock = asyncio.Lock()
+    last_call = [0.0]
+    rate_stop = asyncio.Event()
+    rate_hit = [False]
 
     async def make_item(cid: str, p: dict):
         async with sem:
+            if rate_stop.is_set():
+                return
+            async with pace_lock:
+                wait = LLM_MIN_INTERVAL - (time.monotonic() - last_call[0])
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                last_call[0] = time.monotonic()
             try:
                 data, tokens, used_model = await summarize(p["title"], p["body"])
                 stats["models"][used_model] = stats["models"].get(used_model, 0) + 1
+            except RateLimited as e:
+                if not rate_hit[0]:
+                    rate_hit[0] = True
+                    print(f"  [429] 网关限流({e.retry_after:.0f}s 后可恢复)，本轮提前结束，剩余留待下轮", flush=True)
+                rate_stop.set()
+                return
             except Exception as e:
                 print(f"  [LLM-ERR] {p['id']}: {e}", flush=True)
                 return
@@ -168,6 +186,7 @@ async def run_pipeline(limit: int = BATCH_LIMIT) -> dict:
         stats["new_clusters"] += 1
 
     await asyncio.gather(*(make_item(cid, p) for cid, p in new_clusters.items()))
+    stats["rate_limited"] = rate_hit[0]
     stats["elapsed"] = round(time.time() - t0, 1)
     return stats
 

@@ -31,6 +31,18 @@ class EmbeddingUnavailable(RuntimeError):
     pass
 
 
+class RateLimited(RuntimeError):
+    def __init__(self, retry_after: float = 60.0):
+        super().__init__(f"rate limited, retry after {retry_after:.0f}s")
+        self.retry_after = retry_after
+
+
+def _extract_retry_after(err_text: str) -> float:
+    import re
+    m = re.search(r"in (\d+) seconds?", err_text or "")
+    return float(m.group(1)) if m else 60.0
+
+
 SYSTEM_SUMMARY = (
     "你是中文资讯摘要助手。根据给定的新闻标题与正文，输出一个 JSON 对象，字段：\n"
     'summary: 不超过120字的中文摘要，直接陈述事实，不要"本文"、"文章"等词\n'
@@ -124,6 +136,8 @@ async def summarize(title: str, body: str):
             return data, tokens, model
         except Exception as e:
             last_err = e
+            if isinstance(e, APIStatusError) and e.status_code == 429:
+                raise RateLimited(_extract_retry_after(str(e))) from e
             if not _retryable(e):
                 raise
             status = getattr(e, "status_code", type(e).__name__)
