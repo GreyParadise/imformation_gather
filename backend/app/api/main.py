@@ -140,6 +140,41 @@ async def stats():
     return out
 
 
+@app.get("/api/news/item/{article_id}", dependencies=[Auth])
+async def news_item(article_id: int):
+    with db.get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT a.id, a.url, a.title, a.cover, a.published_at, substr(a.body, 1, 800) AS excerpt,
+                   n.summary, n.tags, n.cluster_id, n.cluster_size, n.heat,
+                   s.name AS source_name, s.category
+            FROM news_items n
+            JOIN articles a ON a.id = n.article_id
+            JOIN sources s ON s.id = a.source_id
+            WHERE a.id = ?
+            """,
+            (article_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    r = dict(row)
+    try:
+        r["tags"] = json.loads(r["tags"] or "[]")
+    except json.JSONDecodeError:
+        r["tags"] = []
+    if r.get("cluster_id"):
+        with db.get_db() as conn:
+            others = conn.execute(
+                "SELECT s.name AS source_name, a.url, a.title FROM news_items n "
+                "JOIN articles a ON a.id=n.article_id JOIN sources s ON s.id=a.source_id "
+                "WHERE n.cluster_id=? AND n.article_id!=? ORDER BY a.published_at DESC LIMIT 5",
+                (r["cluster_id"], article_id),
+            ).fetchall()
+        r["related"] = [dict(o) for o in others]
+    r.pop("cluster_id", None)
+    return r
+
+
 @app.post("/api/sources/test", dependencies=[Auth])
 async def test_source(payload: dict):
     url = (payload.get("url") or "").strip()
@@ -183,7 +218,13 @@ async def add_source(payload: dict):
     if not test["ok"]:
         raise HTTPException(status_code=422, detail=f"源无法解析为 RSS: {test.get('error')}")
     key = _slug_from_url(url)
+    cat_name = (payload.get("category_name") or "").strip()
     with db.get_db() as conn:
+        if cat_name:
+            conn.execute(
+                "INSERT INTO categories(key,name) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET name=excluded.name",
+                (category, cat_name),
+            )
         exists = conn.execute("SELECT id FROM sources WHERE url=?", (url,)).fetchone()
         if exists:
             raise HTTPException(status_code=409, detail="该 URL 已存在")
@@ -207,6 +248,19 @@ async def list_sources():
             """
         ).fetchall()
     return {"sources": [dict(r) for r in rows]}
+
+
+@app.patch("/api/sources/{source_id}", dependencies=[Auth])
+async def update_source(source_id: int, payload: dict):
+    allowed = {k: payload[k] for k in ("enabled", "name", "category", "mode", "weight") if k in payload}
+    if not allowed:
+        raise HTTPException(status_code=400, detail="no editable fields")
+    sets = ", ".join(f"{k}=?" for k in allowed)
+    with db.get_db() as conn:
+        if not conn.execute("SELECT id FROM sources WHERE id=?", (source_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="not found")
+        conn.execute(f"UPDATE sources SET {sets} WHERE id=?", (*allowed.values(), source_id))
+    return {"ok": True}
 
 
 @app.delete("/api/sources/{source_id}", dependencies=[Auth])
