@@ -1,7 +1,21 @@
 import array
 import math
 
+from .dedupe import hamming
+
 SIM_THRESHOLD = 0.86
+SIMHASH_CLUSTER_DISTANCE = 6
+
+
+def find_cluster_by_simhash(sh: int, reps: list[tuple[str, int]]) -> str | None:
+    best_id = None
+    best_dist = SIMHASH_CLUSTER_DISTANCE
+    for cid, rsh in reps:
+        d = hamming(sh or 0, rsh or 0)
+        if d <= best_dist:
+            best_dist = d
+            best_id = cid
+    return best_id
 
 
 def pack_vec(vec: list[float]) -> bytes:

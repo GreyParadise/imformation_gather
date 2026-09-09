@@ -12,10 +12,22 @@ SOURCES_YML = CONFIG_DIR / "sources.yml"
 
 load_dotenv(BACKEND_DIR / ".env")
 
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
-QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen-flash")
-QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "text-embedding-v3")
-QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+def _env(*names: str, default: str = "") -> str:
+    for n in names:
+        v = os.getenv(n)
+        if v:
+            return v
+    return default
+
+
+LLM_API_KEY = _env("LLM_API_KEY", "DASHSCOPE_API_KEY")
+LLM_BASE_URL = _env("LLM_BASE_URL", "QWEN_BASE_URL", default="https://chat.iphy.ac.cn/api/v1")
+LLM_MODEL = _env("LLM_MODEL", "QWEN_MODEL", default="glm-5.3-flash")
+LLM_MODEL_CHAIN = _env("LLM_MODEL_CHAIN", "QWEN_MODEL_CHAIN")
+EMBED_MODEL = _env("EMBED_MODEL", "QWEN_EMBEDDING_MODEL")
+EMBED_MODEL_CHAIN = _env("EMBED_MODEL_CHAIN", "QWEN_EMBED_MODEL_CHAIN")
+LLM_TIMEOUT = float(_env("LLM_TIMEOUT", default="60"))
 APP_KEY = os.getenv("APP_KEY", "")
 PROXY_URL = os.getenv("PROXY_URL") or None
 
