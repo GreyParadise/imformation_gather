@@ -1,23 +1,34 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { api, config, saveConfig } from './api'
+import { api, config, saveConfig, ui } from './api'
 
 const route = useRoute()
+const isDev = import.meta.env.DEV
 const showCfg = ref(false)
 const cfg = reactive({ url: config.url, key: config.key })
 const cfgMsg = ref('')
 const connected = ref(null)
 
-watch(showCfg, (v) => {
-  if (v) { cfg.url = config.url; cfg.key = config.key; cfgMsg.value = ''; connected.value = null }
+function syncForm() {
+  cfg.url = config.url
+  cfg.key = config.key
+  cfgMsg.value = ''
+  connected.value = null
+}
+
+watch(showCfg, (v) => { if (v) syncForm() })
+
+watch(() => ui.needKey, (v) => {
+  if (v && !showCfg.value) { showCfg.value = true; syncForm(); connected.value = false; cfgMsg.value = '当前 App Key 缺失或错误，请重新填写' }
 })
 
 async function testConn() {
   saveConfig({ url: cfg.url.trim(), key: cfg.key.trim() })
   connected.value = null
+  cfgMsg.value = ''
   try {
-    await api('/api/health')
+    await api('/api/stats')
     connected.value = true
   } catch (e) {
     connected.value = false
@@ -25,13 +36,17 @@ async function testConn() {
   }
 }
 
-function save() {
+async function save() {
   saveConfig({ url: cfg.url.trim(), key: cfg.key.trim() })
   showCfg.value = false
+  ui.needKey = false
+  try {
+    await api('/api/stats')
+  } catch { /* 忽略，下条会重载 */ }
   location.reload()
 }
 
-const needCfg = () => !config.url && !import.meta.env.DEV
+const needCfg = () => !config.key && !showCfg.value
 </script>
 
 <template>
@@ -53,11 +68,11 @@ const needCfg = () => !config.url && !import.meta.env.DEV
   <div v-if="showCfg" class="modal-mask" @click.self="showCfg = false">
     <div class="modal">
       <h3>服务器设置</h3>
-      <label>API 地址（留空=同源，开发模式）</label>
+      <label>API 地址{{ isDev ? '（开发模式同源，可留空）' : '' }}</label>
       <input v-model="cfg.url" placeholder="https://your-tunnel.trycloudflare.com" />
       <label>App Key</label>
-      <input v-model="cfg.key" type="password" placeholder="后端 .env 中的 APP_KEY" />
-      <div v-if="connected === true" class="msg-ok">✓ 连接成功</div>
+      <input v-model="cfg.key" type="text" autocomplete="off" placeholder="后端 .env 中的 APP_KEY" />
+      <div v-if="connected === true" class="msg-ok">✓ 鉴权通过</div>
       <div v-if="connected === false" class="err">✗ {{ cfgMsg }}</div>
       <div class="actions">
         <button class="btn ghost" @click="testConn">测试连接</button>
@@ -66,20 +81,18 @@ const needCfg = () => !config.url && !import.meta.env.DEV
     </div>
   </div>
 
-  <div v-if="needCfg() && !showCfg" class="modal-mask">
+  <div v-else-if="needCfg()" class="modal-mask">
     <div class="modal">
-      <h3>首次使用</h3>
-      <p style="font-size:13.5px;color:var(--text-2);margin-bottom:6px">请填写后端 API 地址与 App Key（后端 .env 中的 APP_KEY）。</p>
-      <label>API 地址</label>
-      <input v-model="cfg.url" placeholder="https://..." />
+      <h3>首次使用 · 请填写 App Key</h3>
+      <p style="font-size:13px;color:var(--text-3);margin-bottom:8px">Key 存于浏览器本地、按域名隔离。用 IP 访问需在当前地址重新填一次。</p>
       <label>App Key</label>
-      <input v-model="cfg.key" type="password" />
+      <input v-model="cfg.key" type="text" autocomplete="off" placeholder="后端 .env 中的 APP_KEY" />
+      <div v-if="connected === true" class="msg-ok">✓ 鉴权通过</div>
+      <div v-if="connected === false" class="err">✗ {{ cfgMsg }}</div>
       <div class="actions">
         <button class="btn ghost" @click="testConn">测试连接</button>
         <button class="btn" @click="save">保存</button>
       </div>
-      <div v-if="connected === true" class="msg-ok">✓ 连接成功，请点保存</div>
-      <div v-if="connected === false" class="err">✗ {{ cfgMsg }}</div>
     </div>
   </div>
 </template>

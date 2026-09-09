@@ -2,6 +2,8 @@ import { reactive } from 'vue'
 
 const defaults = { url: '', key: '' }
 
+export const ui = reactive({ needKey: false })
+
 export const config = reactive({
   ...defaults,
   ...JSON.parse(localStorage.getItem('ig_config') || '{}')
@@ -26,7 +28,7 @@ export async function api(path, params = {}) {
   const resp = await fetch(`${serverBase()}${path}${qs ? `?${qs}` : ''}`, {
     headers: config.key ? { 'X-App-Key': config.key } : {}
   })
-  if (resp.status === 401) throw new Unauthorized('app key 不正确')
+  if (resp.status === 401) { ui.needKey = true; throw new Unauthorized('app key 不正确') }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return resp.json()
 }
@@ -40,7 +42,7 @@ export async function apiSend(path, method, body) {
     },
     body: JSON.stringify(body)
   })
-  if (resp.status === 401) throw new Unauthorized('app key 不正确')
+  if (resp.status === 401) { ui.needKey = true; throw new Unauthorized('app key 不正确') }
   const data = await resp.json().catch(() => ({}))
   if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
   return data
