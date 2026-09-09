@@ -1,0 +1,40 @@
+# ---- secrets ----
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# ---- Python / backend ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# ---- Node / frontend ----
+node_modules/
+dist/
+dist-electron/
+.vite/
+*.local
+
+# ---- Android / Capacitor ----
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# ---- misc ----
+.DS_Store
+Thumbs.db
+logs/
+*.log
