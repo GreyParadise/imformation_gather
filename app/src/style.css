@@ -65,6 +65,10 @@ a { color: inherit; text-decoration: none; }
 }
 .card:active { transform: scale(0.985); }
 .card img.cover { width: 100%; display: block; object-fit: cover; max-height: 200px; }
+.card.feat { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.card.feat img.cover { max-height: 260px; }
+.card.feat .title { font-size: 15.5px; -webkit-line-clamp: 4; }
+.card.feat .hot { background: var(--accent); color: #fff; }
 .card .body { padding: 10px 12px 12px; }
 .card .title {
   font-size: 14.5px; font-weight: 600; line-height: 1.45; margin-bottom: 6px;

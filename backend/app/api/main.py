@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .. import db
 from ..pipeline.httpclient import make_async_client
+from ..pipeline import readproxy
 from ..settings import APP_KEY
 
 app = FastAPI(title="InfoGather API", lifespan=None)
@@ -43,7 +44,21 @@ async def startup():
 @app.middleware("http")
 async def auth_middleware(request, call_next):
     path = request.url.path
-    if path.startswith("/api/") and path not in OPEN_API_PATHS and request.method != "OPTIONS":
+    if path.startswith("/api/img/") or path.startswith("/api/cover/"):
+        if APP_KEY:
+            import hmac
+            header_ok = False
+            key = request.headers.get("x-app-key")
+            if key:
+                header_ok = hmac.compare_digest(key, APP_KEY)
+            parts = path.split("/")
+            try:
+                aid = int(parts[3])
+            except (IndexError, ValueError):
+                return JSONResponse401()
+            if not (header_ok or readproxy.verify_token(aid, request.query_params.get("t"))):
+                return JSONResponse401()
+    elif path.startswith("/api/") and path not in OPEN_API_PATHS and request.method != "OPTIONS":
         if APP_KEY:
             import hmac
             key = request.headers.get("x-app-key")
@@ -51,6 +66,11 @@ async def auth_middleware(request, call_next):
                 from fastapi.responses import JSONResponse
                 return JSONResponse({"detail": "invalid app key"}, status_code=401)
     return await call_next(request)
+
+
+def JSONResponse401():
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": "invalid or missing media token"}, status_code=401)
 
 
 def _encode_cursor(published_at: str, article_id: int) -> str:
@@ -64,6 +84,49 @@ def _decode_cursor(cursor: str) -> tuple[str, int]:
         return str(published_at), int(article_id)
     except (ValueError, binascii.Error, json.JSONDecodeError):
         raise HTTPException(status_code=400, detail="bad cursor")
+
+
+def _decode_offset(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        v = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+        return int(v[0]) if isinstance(v, list) else int(v)
+    except Exception:
+        return 0
+
+
+def _esc_like(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+PER_SOURCE_QUOTA = 10
+
+
+def scatter(rows: list[dict], cap: int = PER_SOURCE_QUOTA) -> list[dict]:
+    srcs: dict[int, list] = {}
+    for r in rows:
+        srcs.setdefault(r["source_id"], []).append(r)
+    idx = {k: 0 for k in srcs}
+    cnt = {k: 0 for k in srcs}
+    out: list[dict] = []
+    n = len(rows)
+    for limit in (cap, cap * 3, n + 1):
+        while len(out) < n:
+            best_sid, best_t = None, None
+            for sid, lst in srcs.items():
+                i = idx[sid]
+                if i >= len(lst) or cnt[sid] >= limit:
+                    continue
+                t = lst[i]["published_at"]
+                if best_t is None or t > best_t:
+                    best_sid, best_t = sid, t
+            if best_sid is None:
+                break
+            out.append(srcs[best_sid][idx[best_sid]])
+            idx[best_sid] += 1
+            cnt[best_sid] += 1
+    return out
 
 
 @app.get("/api/health")
@@ -92,41 +155,144 @@ async def news(
     category: Optional[str] = Query(None),
     before: Optional[str] = Query(None),
     size: int = Query(30, ge=1, le=50),
+    q: Optional[str] = Query(None),
+    source: Optional[int] = Query(None),
+    tag: Optional[str] = Query(None),
 ):
+    offset = _decode_offset(before)
     where = ["n.is_relevant = 1"]
     params: list = []
     if category:
         where.append("s.category = ?")
         params.append(category)
-    if before:
-        pub, aid = _decode_cursor(before)
-        where.append("(a.published_at < ? OR (a.published_at = ? AND a.id < ?))")
-        params += [pub, pub, aid]
-    sql = f"""
-        SELECT a.id, a.url, a.title, a.cover, a.published_at,
-               n.summary, n.tags, n.cluster_size, n.heat,
-               s.name AS source_name, s.category
+    if source:
+        where.append("s.id = ?")
+        params.append(source)
+    if tag:
+        where.append("n.tags LIKE ? ESCAPE '\\'")
+        params.append(f'%"{_esc_like(tag)}"%')
+    if q:
+        where.append("(a.title LIKE ? ESCAPE '\\' OR n.summary LIKE ? ESCAPE '\\' OR n.tags LIKE ? ESCAPE '\\')")
+        like = f"%{_esc_like(q)}%"
+        params += [like, like, like]
+    where_sql = " AND ".join(where)
+    base_from = f"""
         FROM news_items n
         JOIN articles a ON a.id = n.article_id
         JOIN sources s ON s.id = a.source_id
-        WHERE {' AND '.join(where)}
-        ORDER BY a.published_at DESC, a.id DESC
-        LIMIT ?
+        WHERE {where_sql}
     """
-    params.append(size + 1)
+    select_cols = """
+        SELECT a.id, a.source_id, a.url, a.title, a.cover, a.published_at,
+               n.summary, n.tags, n.cluster_size, n.heat,
+               s.name AS source_name, s.category
+    """
     with db.get_db() as conn:
-        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
-    has_more = len(rows) > size
-    rows = rows[:size]
-    for r in rows:
+        total = conn.execute(f"SELECT COUNT(1) c {base_from}", params).fetchone()["c"]
+        if q:
+            sql = f"{select_cols} {base_from} ORDER BY a.published_at DESC, a.id DESC LIMIT ? OFFSET ?"
+            rows = [dict(r) for r in conn.execute(sql, (*params, size + 1, offset)).fetchall()]
+            page = rows[:size]
+            has_more = offset + size < total
+        else:
+            fetch_limit = max(offset + size + 1, 600)
+            sql = f"{select_cols} {base_from} ORDER BY a.published_at DESC, a.id DESC LIMIT ?"
+            allrows = [dict(r) for r in conn.execute(sql, (*params, fetch_limit)).fetchall()]
+            truncated = len(allrows) >= fetch_limit
+            ordered = scatter(allrows)
+            page = ordered[offset: offset + size]
+            has_more = offset + size < len(ordered) or truncated
+    for r in page:
         try:
             r["tags"] = json.loads(r["tags"] or "[]")
         except json.JSONDecodeError:
             r["tags"] = []
-    next_cursor = None
-    if has_more and rows:
-        next_cursor = _encode_cursor(rows[-1]["published_at"], rows[-1]["id"])
-    return {"records": rows, "next_cursor": next_cursor}
+        if r.get("cover"):
+            r["cover_token"] = readproxy.sign_token(r["id"])
+    if has_more:
+        raw = json.dumps(str(offset + size))
+        next_cursor = base64.urlsafe_b64encode(raw.encode()).decode()
+    else:
+        next_cursor = None
+    return {"records": page, "next_cursor": next_cursor, "total": total}
+
+
+@app.get("/api/tags", dependencies=[Auth])
+async def tags_api(category: Optional[str] = Query(None)):
+    from collections import Counter
+    where = ["n.is_relevant = 1"]
+    params: list = []
+    if category:
+        where.append("s.category = ?")
+        params.append(category)
+    with db.get_db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT n.tags FROM news_items n
+            JOIN articles a ON a.id = n.article_id
+            JOIN sources s ON s.id = a.source_id
+            WHERE {' AND '.join(where)}
+            """,
+            params,
+        ).fetchall()
+    counter: Counter = Counter()
+    for r in rows:
+        try:
+            for t in json.loads(r["tags"] or "[]"):
+                counter[str(t)] += 1
+        except json.JSONDecodeError:
+            pass
+    return {"tags": [{"name": k, "count": v} for k, v in counter.most_common(24)]}
+
+
+@app.get("/api/read/{article_id}", dependencies=[Auth])
+async def read_article(article_id: int):
+    result = await readproxy.get_reader(article_id)
+    if "error" in result and result.get("error") in ("not_found", "blocked"):
+        raise HTTPException(status_code=404 if result["error"] == "not_found" else 400, detail=result["error"])
+    return {
+        "article_id": article_id,
+        "title": result.get("title"),
+        "page_title": result.get("page_title"),
+        "byline": result.get("byline"),
+        "url": result.get("url"),
+        "html": result.get("html"),
+        "error": result.get("error"),
+        "cached_at": result.get("fetched_at"),
+    }
+
+
+@app.get("/api/img/{article_id}/{idx}")
+async def proxy_img(article_id: int, idx: int):
+    hit = readproxy.cached(article_id)
+    if not hit:
+        raise HTTPException(status_code=404, detail="not cached")
+    images = hit.get("images") or []
+    if idx < 0 or idx >= len(images):
+        raise HTTPException(status_code=400, detail="bad index")
+    async with make_async_client() as client:
+        got = await readproxy.proxy_image(client, images[idx], hit.get("url"))
+    if not got:
+        raise HTTPException(status_code=404, detail="image unavailable")
+    content, ct = got
+    from fastapi.responses import Response
+    return Response(content=content, media_type=ct, headers={"Cache-Control": "public, max-age=604800"})
+
+
+@app.get("/api/cover/{article_id}")
+async def proxy_cover(article_id: int):
+    with db.get_db() as conn:
+        row = conn.execute("SELECT cover, url FROM articles WHERE id=?", (article_id,)).fetchone()
+    if not row or not row["cover"] or readproxy._is_blocked_target(row["cover"]):
+        raise HTTPException(status_code=404, detail="no cover")
+    async with make_async_client() as client:
+        got = await readproxy.proxy_image(client, row["cover"], row["url"])
+    if not got:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(row["cover"])
+    content, ct = got
+    from fastapi.responses import Response
+    return Response(content=content, media_type=ct, headers={"Cache-Control": "public, max-age=604800"})
 
 
 @app.get("/api/updates", dependencies=[Auth])
@@ -192,6 +358,8 @@ async def news_item(article_id: int):
         r["tags"] = json.loads(r["tags"] or "[]")
     except json.JSONDecodeError:
         r["tags"] = []
+    if r.get("cover"):
+        r["cover_token"] = readproxy.sign_token(article_id)
     if r.get("cluster_id"):
         with db.get_db() as conn:
             others = conn.execute(

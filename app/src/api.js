@@ -64,6 +64,15 @@ export async function apiSend(path, method, body) {
   return parseJson(resp)
 }
 
+export function mediaUrl(item) {
+  if (!item.cover || !item.cover_token) return ''
+  return `${serverBase()}/api/cover/${item.id}?t=${encodeURIComponent(item.cover_token)}`
+}
+
+export function rewriteReaderHtml(html) {
+  return (html || '').replaceAll('src="/api/', `src="${serverBase()}/api/`)
+}
+
 export function openExternal(url) {
   const cap = window.Capacitor
   if (cap?.Plugins?.Browser) {

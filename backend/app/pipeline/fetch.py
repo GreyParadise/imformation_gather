@@ -1,10 +1,58 @@
+import re
 from calendar import timegm
 from datetime import datetime, timezone
+from urllib.parse import urljoin
 
 import feedparser
 import httpx
 
 from ..settings import HTTP_TIMEOUT, UA
+
+IMG_SRC_RE = re.compile(r"<img[^>]+src=[\"']([^\"']+)[\"']", re.I)
+IMG_EXT_RE = re.compile(r"\.(jpe?g|png|webp|gif|avif)(\?|$)", re.I)
+
+
+JUNK_COVER_RE = re.compile(r"(logo|favicon|icon|placeholder|sprite|avatar|1x1)", re.I)
+
+
+def _clean_cover(url, base):
+    if not url:
+        return None
+    absu = urljoin(base, url.strip()) if base else url.strip()
+    if not absu.startswith("http") or JUNK_COVER_RE.search(absu):
+        return None
+    return absu
+
+
+def _entry_cover(entry, link: str, payload_html: str) -> str | None:
+    for key in ("media_thumbnail", "media_content"):
+        for m in entry.get(key) or []:
+            url = m.get("url") if isinstance(m, dict) else None
+            if not url:
+                continue
+            medium = (m.get("medium") or "") if isinstance(m, dict) else ""
+            mtype = (m.get("type") or "") if isinstance(m, dict) else ""
+            if key == "media_thumbnail" or medium == "image" or mtype.startswith("image") or IMG_EXT_RE.search(url):
+                cov = _clean_cover(url, link)
+                if cov:
+                    return cov
+    for enc in entry.get("enclosures") or []:
+        url = enc.get("url") if isinstance(enc, dict) else None
+        if url and (str(enc.get("type", "")).startswith("image") or IMG_EXT_RE.search(url)):
+            cov = _clean_cover(url, link)
+            if cov:
+                return cov
+    it_img = entry.get("itunes_image")
+    if isinstance(it_img, dict) and it_img.get("href"):
+        cov = _clean_cover(it_img["href"], link)
+        if cov:
+            return cov
+    m = IMG_SRC_RE.search(payload_html or "")
+    if m:
+        cov = _clean_cover(m.group(1), link)
+        if cov:
+            return cov
+    return None
 
 
 def _ts(struct) -> str | None:
@@ -54,6 +102,7 @@ async def fetch_feed(client: httpx.AsyncClient, url: str, etag: str | None, last
             "author": (e.get("author") or "").strip() or None,
             "published_at": _entry_published(e),
             "payload_html": body_html,
+            "cover": _entry_cover(e, link, body_html),
         })
     return {
         "ok": True,

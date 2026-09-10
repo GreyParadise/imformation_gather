@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS embeddings (
     vector BLOB NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reader_cache (
+    article_id INTEGER PRIMARY KEY REFERENCES articles(id),
+    url TEXT NOT NULL,
+    html TEXT NOT NULL,
+    images TEXT NOT NULL DEFAULT '[]',
+    page_title TEXT,
+    byline TEXT,
+    fetched_at TEXT NOT NULL
+);
 """
 
 

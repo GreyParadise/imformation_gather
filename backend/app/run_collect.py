@@ -8,7 +8,7 @@ import yaml
 
 from . import db
 from .pipeline.dedupe import hamming, normalize_url, simhash64, url_hash
-from .pipeline.extract import enrich_batch, html_to_text
+from .pipeline.extract import cover_batch, enrich_batch, html_to_text
 from .pipeline.fetch import fetch_feed
 from .pipeline.httpclient import make_async_client
 from .settings import SOURCES_YML
@@ -61,7 +61,7 @@ def load_and_sync_sources(conn) -> list[dict]:
 
 
 async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
-    stats = {"new_articles": 0, "dropped_dup": 0, "enriched": 0, "sources_ok": 0, "sources_fail": 0, "not_modified": 0}
+    stats = {"new_articles": 0, "dropped_dup": 0, "enriched": 0, "covers": 0, "sources_ok": 0, "sources_fail": 0, "not_modified": 0}
     db.init_db()
     with db.get_db() as conn:
         load_and_sync_sources(conn)
@@ -98,6 +98,7 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
                         "url": norm,
                         "title": entry["title"],
                         "body": body_text or None,
+                        "cover": entry.get("cover"),
                         "author": entry.get("author"),
                         "published_at": entry.get("published_at") or now_iso(),
                         "fetched_at": now_iso(),
@@ -109,8 +110,8 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
                 for a in articles:
                     try:
                         conn.execute(
-                            "INSERT INTO articles(url,url_hash,source_id,title,body,author,published_at,fetched_at,simhash) "
-                            "VALUES(:url,:url_hash,:source_id,:title,:body,:author,:published_at,:fetched_at,:simhash)",
+                            "INSERT INTO articles(url,url_hash,source_id,title,body,cover,author,published_at,fetched_at,simhash) "
+                            "VALUES(:url,:url_hash,:source_id,:title,:body,:cover,:author,:published_at,:fetched_at,:simhash)",
                             {**a, "simhash": to_db_int(a["simhash"])},
                         )
                         inserted_keys.append(a)
@@ -152,6 +153,21 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
                     )
                     a["simhash"] = simhash64(a["title"] + " " + a["body"][:120])
                     stats["enriched"] += 1
+
+    from collections import defaultdict
+    by_src: dict[int, list] = defaultdict(list)
+    for a in new_inserts:
+        if a.get("source_mode") == "news" and not a.get("cover"):
+            by_src[a["source_id"]].append(a)
+    need_cover = [a for lst in by_src.values() for a in lst[:20]]
+    if need_cover:
+        async with make_async_client() as client:
+            await cover_batch(client, need_cover)
+        with db.get_db() as conn:
+            for a in need_cover:
+                if a.get("cover"):
+                    conn.execute("UPDATE articles SET cover=? WHERE url_hash=?", (a["cover"], a["url_hash"]))
+                    stats["covers"] += 1
 
     with db.get_db() as conn:
         pool = list(recent_hashes)
