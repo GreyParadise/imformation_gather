@@ -84,8 +84,10 @@ const needCfg = () => !config.key && !showCfg.value
 
   <div v-else-if="needCfg()" class="modal-mask">
     <div class="modal">
-      <h3>首次使用 · 请填写 App Key</h3>
-      <p style="font-size:13px;color:var(--text-3);margin-bottom:8px">Key 存于浏览器本地、按域名隔离。用 IP 访问需在当前地址重新填一次。</p>
+      <h3>首次使用 · 请填写连接信息</h3>
+      <p style="font-size:13px;color:var(--text-3);margin-bottom:8px">APK 内使用必须填写完整 API 地址（电脑双击 start.bat 后屏幕上显示的 https://xxx.trycloudflare.com），Key 存于本地按域名隔离。</p>
+      <label>API 地址</label>
+      <input v-model="cfg.url" placeholder="https://xxx.trycloudflare.com" />
       <label>App Key</label>
       <input v-model="cfg.key" type="text" autocomplete="off" placeholder="后端 .env 中的 APP_KEY" />
       <div v-if="connected === true" class="msg-ok">✓ 鉴权通过</div>

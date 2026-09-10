@@ -10,13 +10,27 @@ export const config = reactive({
 })
 
 export function saveConfig(patch) {
-  Object.assign(config, patch)
+  let url = (patch.url ?? config.url ?? '').trim()
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url
+  const next = { ...config, ...patch, url }
+  config.url = next.url
+  config.key = next.key.trim()
   localStorage.setItem('ig_config', JSON.stringify({ url: config.url, key: config.key }))
 }
 
 export function serverBase() {
   if (import.meta.env.DEV) return ''
-  return (config.url || '').replace(/\/+$/, '')
+  const u = (config.url || '').replace(/\/+$/, '')
+  if (!u) throw new Error('未填写 API 地址：请在下方填入完整隧道域名（https://xxx.trycloudflare.com）')
+  return u
+}
+
+async function parseJson(resp) {
+  const ct = resp.headers.get('content-type') || ''
+  if (!ct.includes('json')) {
+    throw new Error('服务器返回的不是 JSON——请检查 API 地址是否为后端隧道域名（不要带 /api 等路径后缀）')
+  }
+  return resp.json()
 }
 
 export class Unauthorized extends Error {}
@@ -30,7 +44,7 @@ export async function api(path, params = {}) {
   })
   if (resp.status === 401) { ui.needKey = true; throw new Unauthorized('app key 不正确') }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-  return resp.json()
+  return parseJson(resp)
 }
 
 export async function apiSend(path, method, body) {
@@ -43,9 +57,11 @@ export async function apiSend(path, method, body) {
     body: JSON.stringify(body)
   })
   if (resp.status === 401) { ui.needKey = true; throw new Unauthorized('app key 不正确') }
-  const data = await resp.json().catch(() => ({}))
-  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`)
-  return data
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}))
+    throw new Error(data.detail || `HTTP ${resp.status}`)
+  }
+  return parseJson(resp)
 }
 
 export function openExternal(url) {
