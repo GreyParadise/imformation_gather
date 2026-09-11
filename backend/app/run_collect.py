@@ -104,14 +104,15 @@ async def collect_all(full: bool = False, per_source_cap: int = 30) -> dict:
                         "fetched_at": now_iso(),
                         "simhash": sh,
                         "source_mode": row["mode"],
+                        "body_imgs": json.dumps(entry.get("payload_imgs") or [], ensure_ascii=False) if entry.get("payload_imgs") else None,
                     })
             with db.get_db() as conn:
                 inserted_keys = []
                 for a in articles:
                     try:
                         conn.execute(
-                            "INSERT INTO articles(url,url_hash,source_id,title,body,cover,author,published_at,fetched_at,simhash) "
-                            "VALUES(:url,:url_hash,:source_id,:title,:body,:cover,:author,:published_at,:fetched_at,:simhash)",
+                            "INSERT INTO articles(url,url_hash,source_id,title,body,cover,author,published_at,fetched_at,simhash,body_imgs) "
+                            "VALUES(:url,:url_hash,:source_id,:title,:body,:cover,:author,:published_at,:fetched_at,:simhash,:body_imgs)",
                             {**a, "simhash": to_db_int(a["simhash"])},
                         )
                         inserted_keys.append(a)

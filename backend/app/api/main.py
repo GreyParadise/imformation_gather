@@ -257,6 +257,7 @@ async def read_article(article_id: int):
         "byline": result.get("byline"),
         "url": result.get("url"),
         "html": result.get("html"),
+        "source": result.get("source"),
         "error": result.get("error"),
         "cached_at": result.get("fetched_at"),
     }

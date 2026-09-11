@@ -83,6 +83,12 @@ def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with get_db() as db:
         db.executescript(SCHEMA)
+        acols = {r[1] for r in db.execute("PRAGMA table_info(articles)")}
+        if "body_imgs" not in acols:
+            db.execute("ALTER TABLE articles ADD COLUMN body_imgs TEXT")
+        rcols = {r[1] for r in db.execute("PRAGMA table_info(reader_cache)")}
+        if "source" not in rcols:
+            db.execute("ALTER TABLE reader_cache ADD COLUMN source TEXT DEFAULT 'web'")
 
 
 @contextmanager

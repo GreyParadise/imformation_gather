@@ -72,7 +72,7 @@ onMounted(async () => {
     <div v-if="reader" class="reader">
       <div class="reader-head">
         <b>⚡ 极速阅读</b>
-        <small>{{ item.source_name }} · 后端中转</small>
+        <small>{{ reader.source === 'rss' ? 'RSS 全文' : reader.source === 'web_partial' ? '原站正文（可能不全）' : '原站正文' }} · 后端中转</small>
       </div>
       <div class="reader-body" v-html="rewriteReaderHtml(reader.html)" />
     </div>

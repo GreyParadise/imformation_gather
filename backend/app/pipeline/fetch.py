@@ -7,6 +7,7 @@ import feedparser
 import httpx
 
 from ..settings import HTTP_TIMEOUT, UA
+from .extract import imgs_from_html
 
 IMG_SRC_RE = re.compile(r"<img[^>]+src=[\"']([^\"']+)[\"']", re.I)
 IMG_EXT_RE = re.compile(r"\.(jpe?g|png|webp|gif|avif)(\?|$)", re.I)
@@ -102,6 +103,7 @@ async def fetch_feed(client: httpx.AsyncClient, url: str, etag: str | None, last
             "author": (e.get("author") or "").strip() or None,
             "published_at": _entry_published(e),
             "payload_html": body_html,
+            "payload_imgs": imgs_from_html(body_html)[:6],
             "cover": _entry_cover(e, link, body_html),
         })
     return {

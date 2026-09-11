@@ -8,13 +8,29 @@ from ..settings import HTTP_TIMEOUT, UA
 
 TAG_RE = re.compile(r"<[^>]+>")
 WS_RE = re.compile(r"\s+")
+BLOCK_END_RE = re.compile(r"</(p|div|br|li|h[1-6]|blockquote|article|section|tr)\s*/?>|<br\s*/?>", re.I)
 IMG_SRC_RE_FIRST = re.compile(r'<img[^>]+src=["\'](https?://[^"\']+)', re.I)
+IMG_ALL_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
+
+
+def imgs_from_html(html: str) -> list[str]:
+    if not html:
+        return []
+    out, seen = [], set()
+    for m in IMG_ALL_RE.finditer(html):
+        src = m.group(1)
+        if src.startswith("data:") or src in seen:
+            continue
+        seen.add(src)
+        out.append(src)
+    return out
 
 
 def html_to_text(html: str) -> str:
     if not html:
         return ""
-    text = TAG_RE.sub(" ", html)
+    text = BLOCK_END_RE.sub("\n\n", html)
+    text = TAG_RE.sub(" ", text)
     text = (
         text.replace("&nbsp;", " ")
         .replace("&amp;", "&")
@@ -22,7 +38,8 @@ def html_to_text(html: str) -> str:
         .replace("&gt;", ">")
         .replace("&quot;", '"')
     )
-    return WS_RE.sub(" ", text).strip()
+    lines = [WS_RE.sub(" ", ln).strip() for ln in text.split("\n")]
+    return "\n".join(ln for ln in lines if ln)
 
 
 async def enrich_article(client: httpx.AsyncClient, url: str):
